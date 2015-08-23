@@ -270,6 +270,101 @@ sub folder_create {
 }
 
 
+=head2 folder_share_as_repository
+
+    Share a given folder as repository.
+    
+=cut
+
+sub folder_share_as_repository {
+    my ( $self, %args ) = validated_hash(
+        \@_,
+        folder => { isa => 'Str' },
+        basedir => { isa => 'Str', default => '/' },
+        workspace => { isa => 'Str', default => 'default' },
+        repository => { isa => 'Str', option => 1 },
+        users => { isa => 'HashRef', default => {} },
+        params => { isa => 'HashRef', default => {} },
+    );
+    $args{repository} ||= $args{folder};
+    
+    # Build request path
+    my $strPath = "/api/".$args{workspace}."/share/public".$args{basedir}.$args{folder};
+    print "strPath: ".$strPath."\n" 
+        if $self->{debug};
+        
+    # Build post parameters
+    $args{params}->{sub_action} = 'delegate_repo';
+    $args{params}->{repo_label} = $args{repository};
+    my $intUserIdx = 0;
+    foreach my $strUser (keys %{$args{users}}) {
+        print "strUser: ".$strUser."\n" 
+            if $self->{debug};
+        $args{params}->{'user_'.$intUserIdx} = uri_escape($strUser);
+        $args{params}->{'entry_type_'.$intUserIdx} = 'user';
+        $args{params}->{'right_read_'.$intUserIdx} = (index($args{users}->{$strUser}, 'r') >= 0) ? 'true' : 'false';
+        $args{params}->{'right_write_'.$intUserIdx} = (index($args{users}->{$strUser}, 'w') >= 0) ? 'true' : 'false';
+        $args{params}->{'right_watch_'.$intUserIdx} = (index($args{users}->{$strUser}, 'W') >= 0) ? 'true' : 'false';
+        $intUserIdx++;
+    }
+    print "$args{params}: ".Dumper($args{params})."\n" 
+        if $self->{debug};
+    
+    # Create share
+    my $objRestResponse = $self->post({uri => $strPath, params => $args{params}});
+    
+    # Test response code
+    if ($self->{rest_client}->responseCode() != 200) {
+        die "Unexpected return code " . $self->{rest_client}->responseCode(). "\n";
+    }
+    
+    # There is no clue in the response to discover if the request was successfull.
+}
+
+
+=head2 get_shared_repository_data
+
+    Get the JSON data of a given shared repository.
+    
+=cut
+
+sub get_shared_repository_data {
+    my ( $self, %args ) = validated_hash(
+        \@_,
+        folder => { isa => 'Str' },
+        basedir => { isa => 'Str', default => '/' },
+        workspace => { isa => 'Str', default => 'default' },
+        params => { isa => 'HashRef', default => {} },
+    );
+    
+    # Build request path
+    my $strPath = "/api/".$args{workspace}."/load_shared_element_data".$args{basedir}.$args{folder};
+    print "strPath: ".$strPath."\n" 
+        if $self->{debug};
+        
+    # Build post parameters
+    $args{params}->{'element-type'} = 'repository';
+    
+    # Load data
+    my $objRestResponse = $self->post({uri => $strPath, params => $args{params}});
+    
+    # Test response code
+    if ($self->{rest_client}->responseCode() != 200) {
+        die "Unexpected return code " . $self->{rest_client}->responseCode(). "\n";
+    }
+    unless (length $self->{rest_client}->responseContent() > 0) {
+        die "Missing content\n";
+    }
+    
+    # Import content
+    my $objData = from_json($self->{rest_client}->responseContent());
+    print "objData: ".Dumper($objData)."\n" 
+        if $self->{debug};
+    
+    return $objData;
+}
+
+
 =head2 default_rest_client
 
     Create the rest client object which is used to access the pydio rest server.
