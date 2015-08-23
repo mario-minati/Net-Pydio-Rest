@@ -18,6 +18,7 @@ Version 0.10
 use version; our $VERSION = version->new('0.10');
 #>>>
 
+use Carp qw(confess);
 use Data::Dumper;
 use Digest::SHA qw(sha1_hex hmac_sha256_hex);
 use JSON;
@@ -208,7 +209,7 @@ sub folder_exist {
     
     # Test response code
     if ($self->{rest_client}->responseCode() != 200) {
-        die "Unexpected return code " . $self->{rest_client}>responseCode(). "\n";
+        confess "Unexpected return code " . $self->{rest_client}>responseCode();
     }
     my $objXML = $self->{xml}->XMLin($self->{rest_client}->responseContent());
     print "objXML: ".Dumper($objXML)."\n" 
@@ -254,7 +255,7 @@ sub folder_create {
     
     # Test response code
     if ($self->{rest_client}->responseCode() != 200) {
-        die "Unexpected return code " . $self->{rest_client}->responseCode(). "\n";
+        confess "Unexpected return code " . $self->{rest_client}->responseCode();
     }
     my $objXML = $self->{xml}->XMLin($self->{rest_client}->responseContent());
     print "objXML: ".Dumper($objXML)."\n" 
@@ -315,7 +316,7 @@ sub folder_share_as_repository {
     
     # Test response code
     if ($self->{rest_client}->responseCode() != 200) {
-        die "Unexpected return code " . $self->{rest_client}->responseCode(). "\n";
+        confess "Unexpected return code " . $self->{rest_client}->responseCode();
     }
     
     # There is no clue in the response to discover if the request was successfull.
@@ -350,10 +351,10 @@ sub get_shared_repository_data {
     
     # Test response code
     if ($self->{rest_client}->responseCode() != 200) {
-        die "Unexpected return code " . $self->{rest_client}->responseCode(). "\n";
+        confess "Unexpected return code " . $self->{rest_client}->responseCode();
     }
     unless (length $self->{rest_client}->responseContent() > 0) {
-        die "Missing content\n";
+        confess "Missing content";
     }
     
     # Import content
