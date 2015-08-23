@@ -392,7 +392,6 @@ sub user_create {
     if ($self->{rest_client}->responseCode() != 200) {
         confess "Unexpected return code " . $self->{rest_client}->responseCode();
     }
-    print "responseContent: ".Dumper($self->{rest_client}->responseContent())."\n";
     my $objXML = $self->{xml}->XMLin($self->{rest_client}->responseContent());
     print "objXML: ".Dumper($objXML)."\n" 
         if $self->{debug};
@@ -406,6 +405,41 @@ sub user_create {
     print "Could not create user.\n" 
         if $self->{debug};
     return 0;
+}
+
+
+=head2 user_list
+
+    Get list of all users.
+    
+=cut
+
+sub user_list {
+    my ( $self, %args ) = validated_hash(
+        \@_,
+        params => { isa => 'HashRef', default => {} },
+    );
+    
+    # Build request path
+    my $strPath = "/api/ajxp_conf/ls/data/users";
+    print "strPath: ".$strPath."\n" 
+        if $self->{debug};
+    
+    # Send request
+    my $objRestResponse = $self->post({uri => $strPath, params => $args{params}});
+    
+    # Test response code
+    if ($self->{rest_client}->responseCode() != 200) {
+        confess "Unexpected return code " . $self->{rest_client}->responseCode();
+    }
+    my $objXML = $self->{xml}->XMLin($self->{rest_client}->responseContent());
+    print "objXML: ".Dumper($objXML)."\n" 
+        if $self->{debug};
+        
+    # Extract user names
+    my @usernames = map {$_->{object_id}} grep {$_->{ajxp_mime} eq 'user_editable'} @{$objXML->{tree}};
+    
+    return \@usernames;
 }
 
 
