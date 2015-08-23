@@ -366,6 +366,49 @@ sub get_shared_repository_data {
 }
 
 
+=head2 user_create
+
+    Create a new user.
+    
+=cut
+
+sub user_create {
+    my ( $self, %args ) = validated_hash(
+        \@_,
+        login => { isa => 'Str' },
+        password => { isa => 'Str' },
+        params => { isa => 'HashRef', default => {} },
+    );
+    
+    # Build request path
+    my $strPath = "/api/ajxp_conf/create_user/".uri_escape($args{login})."/".uri_escape($args{password});
+    print "strPath: ".$strPath."\n" 
+        if $self->{debug};
+    
+    # Create new user
+    my $objRestResponse = $self->post({uri => $strPath, params => $args{params}});
+    
+    # Test response code
+    if ($self->{rest_client}->responseCode() != 200) {
+        confess "Unexpected return code " . $self->{rest_client}->responseCode();
+    }
+    print "responseContent: ".Dumper($self->{rest_client}->responseContent())."\n";
+    my $objXML = $self->{xml}->XMLin($self->{rest_client}->responseContent());
+    print "objXML: ".Dumper($objXML)."\n" 
+        if $self->{debug};
+    if (defined $objXML->{message} && 
+        defined $objXML->{message}->{type} &&
+        $objXML->{message}->{type} eq 'SUCCESS') {
+        print "Succesfully created user.\n" 
+            if $self->{debug};
+        return 1;
+    }
+    print "Could not create user.\n" 
+        if $self->{debug};
+    return 0;
+}
+
+
 =head2 default_rest_client
 
     Create the rest client object which is used to access the pydio rest server.
