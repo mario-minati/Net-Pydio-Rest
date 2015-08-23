@@ -444,6 +444,32 @@ sub user_list {
 }
 
 
+=head2 user_exist
+
+    Check if a user exists.
+    Primary admin user can not checked this way.
+    
+=cut
+
+sub user_exist {
+    my ( $self, %args ) = validated_hash(
+        \@_,
+        user => { isa => 'Str' },
+        params => { isa => 'HashRef', default => {} },
+    );
+
+    # Get list of users    
+    my $usernames = $self->user_list({params => $args{params}});
+
+        
+    # Test if user exists
+    return 1
+        if any { $_ eq $args{user}} @$usernames;
+        
+    return 0;
+}
+
+
 =head2 default_rest_client
 
     Create the rest client object which is used to access the pydio rest server.
