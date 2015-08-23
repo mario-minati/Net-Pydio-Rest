@@ -6,47 +6,288 @@ use warnings;
 
 =head1 NAME
 
-Net::Pydio::Rest - The great new Net::Pydio::Rest!
+Net::Pydio::Rest - Provide access to the Pydio (former ajaxplorer) REST API
 
 =head1 VERSION
 
-Version 0.01
+Version 0.10
 
 =cut
 
-our $VERSION = '0.01';
+#<<< NO perltidy - must be all on one line
+use version; our $VERSION = version->new('0.10');
+#>>>
+
+use Data::Dumper;
+use Digest::SHA qw(sha1_hex hmac_sha256_hex);
+use JSON;
+use List::Util qw(any);
+use Moose;
+use MooseX::Params::Validate;
+use REST::Client;
+use URI;
+use URI::Escape;
+use XML::Simple;
+
+has 'rest_client' => (
+    is          => 'rw',
+    isa         => 'Object',
+    required    => 1,
+    default     => \&default_rest_client,
+);
+
+has 'xml' => (
+    is          => 'rw',
+    isa         => 'Object',
+    required    => 1,
+    default     => \&default_xml,
+);
+
+has 'debug' => (
+    is          => 'rw',
+    isa         => 'Bool',
+    default     => 0,
+);
+
+has 'protocol' => (
+    is          => 'rw',
+    isa         => 'Str',
+    required    => 1,
+    default     => 'http',
+);
+
+has 'username' => (
+    is          => 'rw',
+    isa         => 'Str',
+    required    => 1,
+);
+
+has 'password' => (
+    is          => 'rw',
+    isa         => 'Str',
+    required    => 1,
+);
+
+has 'server' => (
+    is          => 'rw',
+    isa         => 'Str',
+    required    => 1,
+);
+
+has 'base_uri' => (
+    is          => 'rw',
+    isa         => 'Str',
+    required    => 1,
+    default     => "/pydio",
+);
+
+has 'private' => (
+    is          => 'rw',
+    isa         => 'Str',
+);
+
+has 'token' => (
+    is          => 'rw',
+    isa         => 'Str',
+);
+
+
+sub BUILD {
+    my $self = shift;
+    
+    # Build URL
+    my $strURL = 
+        $self->{protocol}.'://'.
+        $self->{username}.':'.$self->{password}.'@'.
+        $self->{server}.
+        $self->{base_uri}.
+        '/api/pydio/keystore_generate_auth_token/php_client';
+    print "URL: ".$strURL."\n" 
+        if $self->{debug};
+        
+    # Get URL and decode json
+    $self->{rest_client}->GET($strURL);
+    my $objRestResponse = $self->{rest_client}->responseContent();
+    print "Response: ".Dumper($objRestResponse)."\n" 
+        if $self->{debug};
+    $objRestResponse = from_json($objRestResponse);
+    print "Response decoded: ".Dumper($objRestResponse)."\n" 
+        if $self->{debug};
+        
+    $self->{private} = $objRestResponse->{p};
+    $self->{token} = $objRestResponse->{t};
+}
 
 
 =head1 SYNOPSIS
 
-Quick summary of what the module does.
-
-Perhaps a little code snippet.
-
     use Net::Pydio::Rest;
 
-    my $foo = Net::Pydio::Rest->new();
+    my $pydio = Net::Pydio::Rest->new(
+        server => 'pydio.local',
+        username => 'admin',
+        password => 'secret'
+    );
+    
     ...
-
-=head1 EXPORT
-
-A list of functions that can be exported.  You can delete this section
-if you don't export anything, such as for a purely object-oriented module.
 
 =head1 SUBROUTINES/METHODS
 
-=head2 function1
+=head2 post
+
+    Send an request to the pydio api via post
 
 =cut
 
-sub function1 {
+sub post {
+    my ( $self, %args ) = validated_hash(
+        \@_,
+        uri => { isa => 'Str' },
+        params => { isa => 'HashRef' },
+    );
+    
+    # Generate random data
+    my $strNonce = join "", map { unpack "H*", chr(rand(256)) } 1..3;
+    
+    # Build authentication hash
+    my $message = $self->{base_uri}.$args{uri}.":".$strNonce.":".$self->{private};
+    my $messageEncoded = hmac_sha256_hex($message, $self->{token});
+    my $authHash = $strNonce.":".$messageEncoded;
+    print "Authentication hash: ".$message." --- ".$messageEncoded." --- ".$authHash."\n" 
+        if $self->{debug};
+    
+    # Set api post parameters
+    $args{params}->{auth_hash} = $authHash;
+    $args{params}->{auth_token} = $self->{token};
+    
+    # Create rest post data
+    my $strRestPostData = substr($self->{rest_client}->buildQuery($args{params}), 1);
+    print "RestPostData: ".$strRestPostData."\n" 
+        if $self->{debug};
+
+    # Build URL
+    my $strURL = 
+        $self->{protocol}.'://'.
+        $self->{server}.
+        $self->{base_uri}.
+        $args{uri};
+    print "URL: ".$strURL."\n" 
+        if $self->{debug};
+    
+    # Post request
+    my $objRestResponse = $self->{rest_client}->POST($strURL, $strRestPostData, {'Content-type' => 'application/x-www-form-urlencoded'});
+    print "Response: ".Dumper($objRestResponse)."\n" 
+        if $self->{debug};
+        
+    return $objRestResponse;    
 }
 
-=head2 function2
+
+=head2 folder_exist
+
+    Check if a given folder exists on the pydio backend
 
 =cut
 
-sub function2 {
+sub folder_exist {
+    my ( $self, %args ) = validated_hash(
+        \@_,
+        folder => { isa => 'Str' },
+        basedir => { isa => 'Str', default => '' },
+        workspace => { isa => 'Str', default => 'default' },
+        params => { isa => 'HashRef', default => {} },
+    );
+    
+    # Build request path
+    my $strPath = "/api/".$args{workspace}."/ls".((length $args{basedir} > 0) ? "/" : "").$args{basedir};
+    print "strPath: ".$strPath."\n" 
+        if $self->{debug};
+    
+    # Get directory listing
+    my $objRestResponse = $self->post({uri => $strPath, params => $args{params}});
+    
+    # Test response code
+    if ($self->{rest_client}->responseCode() != 200) {
+        die "Unexpected return code " . $self->{rest_client}>responseCode(). "\n";
+    }
+    my $objXML = $self->{xml}->XMLin($self->{rest_client}->responseContent());
+    print "objXML: ".Dumper($objXML)."\n" 
+        if $self->{debug};
+
+    # Extract folder names
+    my @foldernames = map {$_->{text}} grep {$_->{ajxp_mime} eq 'ajxp_folder'} @{$objXML->{tree}};
+    print "foldernames: ".Dumper(\@foldernames)."\n" 
+        if $self->{debug};
+        
+    # Test if folder exists
+    return 1
+        if any { $_ eq $args{folder}} @foldernames;
+        
+    return 0;
+}
+
+
+=head2 folder_create
+
+    Create a new folder on the pydio backend
+
+=cut
+
+sub folder_create {
+    my ( $self, %args ) = validated_hash(
+        \@_,
+        folder => { isa => 'Str' },
+        basedir => { isa => 'Str', default => '/' },
+        workspace => { isa => 'Str', default => 'default' },
+        params => { isa => 'HashRef', default => {} },
+    );
+    
+    # Build request path
+    my $strPath = "/api/".$args{workspace}."/mkdir";
+    print "strPath: ".$strPath."\n" 
+        if $self->{debug};
+    
+    # Create new directory
+    $args{params}->{dir} = $args{basedir};
+    $args{params}->{dirname} = $args{folder};
+    my $objRestResponse = $self->post({uri => $strPath, params => $args{params}});
+    
+    # Test response code
+    if ($self->{rest_client}->responseCode() != 200) {
+        die "Unexpected return code " . $self->{rest_client}->responseCode(). "\n";
+    }
+    my $objXML = $self->{xml}->XMLin($self->{rest_client}->responseContent());
+    print "objXML: ".Dumper($objXML)."\n" 
+        if $self->{debug};
+    if (defined $objXML->{nodes_diff}) {
+        print "Succesfully created folder.\n" 
+            if $self->{debug};
+        return 1;
+    }
+    print "Could not create folder.\n" 
+        if $self->{debug};
+    return 0;
+}
+
+
+=head2 default_rest_client
+
+    Create the rest client object which is used to access the pydio rest server.
+    
+=cut
+
+sub default_rest_client {
+    return REST::Client->new();
+}
+
+=head2 default_xml
+
+    Create the xml object which is used to decode answers from rest server.
+    
+=cut
+
+sub default_xml {
+    return XML::Simple->new();
 }
 
 =head1 AUTHOR
