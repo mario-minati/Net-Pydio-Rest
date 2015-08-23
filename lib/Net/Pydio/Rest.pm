@@ -411,6 +411,7 @@ sub user_create {
 =head2 user_list
 
     Get list of all users.
+    Primary admin user is not part of list.
     
 =cut
 
