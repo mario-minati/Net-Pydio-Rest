@@ -470,6 +470,53 @@ sub user_exist {
 }
 
 
+=head2 user_delete
+
+    Delete an existing user by it's id.
+    
+    Pydio always returns a success message, even if the user not existed 
+    before.
+    
+=cut
+
+sub user_delete {
+    my ( $self, %args ) = validated_hash(
+        \@_,
+        user_id => { isa => 'Str' },
+    );
+    
+    # Build request path
+    my $strPath = "/api/ajxp_conf/delete";
+    print "strPath: ".$strPath."\n" 
+        if $self->{debug};
+        
+    # Build post parameters
+    $args{params}->{'dir'} = '/data/users';
+    $args{params}->{'user_id'} = $args{user_id};
+    
+    # Delete user
+    my $objRestResponse = $self->post({uri => $strPath, params => $args{params}});
+    
+    # Test response code
+    if ($self->{rest_client}->responseCode() != 200) {
+        confess "Unexpected return code " . $self->{rest_client}->responseCode();
+    }
+    my $objXML = $self->{xml}->XMLin($self->{rest_client}->responseContent());
+    print "objXML: ".Dumper($objXML)."\n" 
+        if $self->{debug};
+    if (defined $objXML->{message} && 
+        defined $objXML->{message}->{type} &&
+        $objXML->{message}->{type} eq 'SUCCESS') {
+        print "Succesfully deleted user.\n" 
+            if $self->{debug};
+        return 1;
+    }
+    print "Could not delete user.\n" 
+        if $self->{debug};
+    return 0;
+}
+
+
 =head2 default_rest_client
 
     Create the rest client object which is used to access the pydio rest server.
